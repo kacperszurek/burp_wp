@@ -39,7 +39,9 @@ If you have Burp Pro, issues will also appear inside *Scanner* tab. Interesting 
 
 ![Install Burp WP](images/install_burp_wp.png)
 
-5. Burp WP should appear inside `Burp Extensions list`. Also you will see new tab.![Installed extension](images/installed.png)
+5. Burp WP should appear inside `Burp Extensions list`. Also you will see new tab.
+
+![Installed extension](images/installed.png)
 
 # Issue type
 
@@ -60,17 +62,17 @@ There are 3 types:
   It has `Information severity` and `Certain confidence`.
 
 3. Print info about discovered plugins (option 5 enabled)
-    ```
-    Found {(plugin|theme)} {plugin_name}
-    ```
+  ```
+  Found {(plugin|theme)} {plugin_name}
+  ```
 
-    or if plugin version is detected:
+  or if plugin version is detected:
 
-    ```
-    Found {(plugin|theme)} {plugin_name} version {detected_version}
-    ```
+  ```
+  Found {(plugin|theme)} {plugin_name} version {detected_version}
+  ```
 
-    It has `Information severity` and `Certain confidence` if is detected. Otherwise `Firm confidence` is used.
+  It has `Information severity` and `Certain confidence` if is detected. Otherwise `Firm confidence` is used.
 
 # Options
 
@@ -80,7 +82,7 @@ There are 3 types:
 
   List of vulnerable plugins and themes is downloaded from [WPscan](https://wpscan.org/). Before downloading, `sha512` of files is being checked to see if there is a new version available.
 
-  This button also checks if new [Burp WP version exist](https://raw.githubusercontent.com/kacperszurek/burp_wp/version.sig) and allows simple auto update mechanism.
+  This button also checks if new [Burp WP version exist](https://raw.githubusercontent.com/kacperszurek/burp_wp/master/version.sig) and allows simple auto update mechanism.
 
 2. Use readme.txt for detecting plugins version
 
