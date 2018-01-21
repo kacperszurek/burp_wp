@@ -1,0 +1,2 @@
+{"version_number": "0.1", "url": "https://raw.githubusercontent.com/kacperszurek/burp_wp/master/burp_wp.py", "sha256": "0e3bd064bc112bc892330ed6232ae3a377d0477868b54f4da402e749acb2277f", "changelog": "Beta 0.1 release"}
+MCwCFB+LthupYe/Mw/CllFGKV93FFCBoAhRPnCT9dFrwqng7oNa3LsvWTsprqw==
