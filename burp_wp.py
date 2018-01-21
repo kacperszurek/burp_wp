@@ -502,7 +502,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                               '/7PSSoDgYQAAoGAN0I2oItGdGxYXfdwEEet9DglWpMr2lKkKLy0hsxeDG7snUtI++YVJaF'
                               '/0SJBpIdTKt8CBweTo5oBcLC0jApYTofft1ukvcpjr6FzqCyI7LmqXAQedpt8JP8gck3Z4JImHhSX1Cdx0hhRmUl3i3JPXQC6VJk1he6Hhm4MqsuM1Ak=')
 
-            (message, signature) = signature_content.split("\r\n")
+            (message, signature) = signature_content.split("\n")
             signature = StringUtil.toBytes(b64decode(signature))
 
             private_key_spec = X509EncodedKeySpec(StringUtil.toBytes(b64decode(public_encoded)))

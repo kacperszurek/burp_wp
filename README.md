@@ -7,7 +7,7 @@ Find known vulnerabilities in WordPress plugins and themes using Burp Suite prox
 **TL;DR: [WPScan](https://wpscan.org/) like plugin for [Burp](https://portswigger.net/) by [Kacper Szurek](https://security.szurek.pl/)**.
 
 # Usage
-[Install](#instalation) extension. Browse WordPress sites through Burp proxy. Vulnerable plugins and themes will appear on the issue list.
+[Install](#installation) extension. Browse WordPress sites through Burp proxy. Vulnerable plugins and themes will appear on the issue list.
 
 ![Usage](images/usage.png)
 
@@ -33,10 +33,12 @@ If you have Burp Pro, issues will also appear inside *Scanner* tab. Interesting 
 2. Go to **Extender->Options**. Set path inside `Location of Jython standalone JAR file`
 
 ![Install Jython](images/install_jython.png)
+
 3. Download [newest Burp WP](https://raw.githubusercontent.com/kacperszurek/burp_wp/master/burp_wp.py)
 4. Go to **Extender->Extensions**. Click **Add**. Set `Extension type` to `Python`. Set path inside `Extension file`.
 
 ![Install Burp WP](images/install_burp_wp.png)
+
 5. Burp WP should appear inside `Burp Extensions list`. Also you will see new tab.![Installed extension](images/installed.png)
 
 # Issue type
