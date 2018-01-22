@@ -36,6 +36,7 @@ from burp import IMessageEditorController
 from burp import IParameter
 from burp import IScanIssue
 from burp import ITab
+from burp import IScannerCheck
 
 from java.awt import Component
 from java.awt import Cursor
@@ -70,12 +71,12 @@ from javax.swing.event import DocumentListener
 from javax.swing.table import AbstractTableModel
 from org.python.core.util import StringUtil
 
-BURP_WP_VERSION = '0.1'
+BURP_WP_VERSION = '0.1.1'
 INTERESTING_CODES = [200, 401, 403, 301]
 DB_NAME = "burp_wp_database.db"
 
 
-class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMessageEditorController):
+class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMessageEditorController, IScannerCheck):
     config = {}
 
     def print_debug(self, message):
@@ -102,6 +103,9 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         self.callbacks.registerIntruderPayloadGeneratorFactory(IntruderThemesGenerator(self))
         self.callbacks.registerIntruderPayloadGeneratorFactory(IntruderPluginsThemesGenerator(self))
 
+        # doPassiveScan
+        self.callbacks.registerScannerCheck(self)
+
         self.initialize_variables()
         self.initialize_gui()
 
@@ -124,7 +128,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
             self.config = {'active_scan': True, 'database_path': os.path.join(os.getcwd(), DB_NAME),
                            'wp_content': 'wp-content', 'full_body': False, 'all_vulns': False, 'scan_type': 1,
                            'debug': False, 'auto_update': True, 'last_update': 0, 'sha_plugins': '', 'sha_themes': '',
-                           'print_info': False, 'update_burp_wp': '0'}
+                           'print_info': False}
 
     def initialize_variables(self):
         self.is_burp_pro = True if "Professional" in self.callbacks.getBurpVersion()[0] else False
@@ -137,7 +141,6 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         self.list_issues = ArrayList()
         self.lock_issues = Lock()
         self.lock_update_database = Lock()
-        self.lock_update_burp_wp = Lock()
 
         self.database = {'plugins': collections.OrderedDict(), 'themes': collections.OrderedDict()}
         self.list_plugins_on_website = defaultdict(list)
@@ -409,8 +412,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
 
         self.update_config('sha_plugins', '')
         self.update_config('sha_themes', '')
-        self.update_config('update_burp_wp', '0')
-
+        
         self.button_update_on_click(None)
 
     def button_reset_to_default_on_click(self, msg):
@@ -435,7 +437,6 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
 
     def button_update_on_click(self, msg):
         threading.Thread(target=self.update_database_wrapper).start()
-        threading.Thread(target=self.update_burp_wp).start()
 
     def button_choose_file_on_click(self, msg):
         file_chooser = JFileChooser()
@@ -489,92 +490,6 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                 self.print_debug("[*] {}".format(update_text))
         except:
             self.print_debug("[-] update_config: {}".format(traceback.format_exc()))
-
-    def verify_update_message(self, signature_content):
-        try:
-            public_encoded = ('MIIBtzCCASwGByqGSM44BAEwggEfAoGBAP1'
-                              '/U4EddRIpUt9KnC7s5Of2EbdSPO9EAMMeP4C2USZpRV1AIlH7WT2NWPq/xfW6MPbLm1Vs14E7gB00b'
-                              '/JmYLdrmVClpJ+f6AR7ECLCT7up1/63xhv4O1fnxqimFQ8E'
-                              '+4P208UewwI1VBNaFpEy9nXzrith1yrv8iIDGZ3RSAHHAhUAl2BQjxUjC8yykrmCouuEC/BYHPUCgYEA9'
-                              '+GghdabPd7LvKtcNrhXuXmUr7v6OuqC+VdMCz0HgmdRWVeOutRZT'
-                              '+ZxBxCBgLRJFnEj6EwoFhO3zwkyjMim4TwWeotUfI0o4KOuHiuzpnWRbqN/C/ohNWLx'
-                              '+2J6ASQ7zKTxvqhRkImog9/hWuWfBpKLZl6Ae1UlZAFMO'
-                              '/7PSSoDgYQAAoGAN0I2oItGdGxYXfdwEEet9DglWpMr2lKkKLy0hsxeDG7snUtI++YVJaF'
-                              '/0SJBpIdTKt8CBweTo5oBcLC0jApYTofft1ukvcpjr6FzqCyI7LmqXAQedpt8JP8gck3Z4JImHhSX1Cdx0hhRmUl3i3JPXQC6VJk1he6Hhm4MqsuM1Ak=')
-
-            (message, signature) = signature_content.split("\n")
-            signature = StringUtil.toBytes(b64decode(signature))
-
-            private_key_spec = X509EncodedKeySpec(StringUtil.toBytes(b64decode(public_encoded)))
-            key_factory = KeyFactory.getInstance("DSA", "SUN")
-            public_key = key_factory.generatePublic(private_key_spec)
-
-            sig = Signature.getInstance("SHA256withDSA")
-            sig.initVerify(public_key)
-            sig.update(message, 0, len(message))
-
-            if sig.verify(signature):
-                return json.loads(message)
-            else:
-                return None
-        except:
-            return None
-
-    def update_burp_wp(self):
-        if not self.lock_update_burp_wp.acquire(False):
-            self.print_debug("[*] update_burp_wp already running")
-            return
-        try:
-            version_content = urllib2.urlopen("https://raw.githubusercontent.com/kacperszurek/burp_wp/master/version.sig", timeout=5).read()
-            if len(version_content) > 2:
-                version_verified = self.verify_update_message(version_content)
-                if version_verified:
-                    if LooseVersion(BURP_WP_VERSION) < LooseVersion(
-                            version_verified['version_number']) and LooseVersion(
-                        version_verified['version_number']) > LooseVersion(self.config.get('update_burp_wp', '0')):
-                        new_file = urllib2.urlopen(version_verified['url'], timeout=5).read()
-                        sha = hashlib.new('sha256')
-                        sha.update(new_file)
-                        if version_verified['sha256'] == sha.hexdigest():
-                            result = JOptionPane.showConfirmDialog(self.panel_main,
-                                                                   "New Burp WP version {} available, update? Changelog: {}".format(
-                                                                       version_verified['version_number'],
-                                                                       version_verified['changelog']), "Burp WP Update",
-                                                                   JOptionPane.YES_NO_OPTION)
-                            if result == JOptionPane.YES_OPTION:
-                                extension_full_path = self.callbacks.getExtensionFilename()
-                                shutil.copy(extension_full_path, extension_full_path + ".bck")
-                                try:
-                                    f = open(extension_full_path, "wb")
-                                    f.write(new_file)
-                                    f.close()
-                                    self.print_debug("[+] update_burp_wp update OK")
-                                    JOptionPane.showMessageDialog(self.panel_main,
-                                                                  "Burp WP updated successfully, please reload extension")
-                                    self.callbacks.unloadExtension()
-                                except:
-                                    print "[-] update_burp_wp cannot write new version: {}".format(
-                                        traceback.format_exc())
-                                    JOptionPane.showMessageDialog(self.panel_main,
-                                                                  "Burp WP update failed, see debug log")
-                            else:
-                                self.update_config('update_burp_wp', version_verified['version_number'])
-                        else:
-                            self.print_debug(
-                                "[-] update_burp_wp sha256 mismatch, is: {} should be: {}".format(sha.hexdigest(),
-                                                                                                  version_verified[
-                                                                                                      'sha256']))
-                    else:
-                        self.print_debug("[*] update_burp_wp no new version")
-                else:
-                    self.print_debug("[-] update_burp_wp cannot verify signature")
-            else:
-                self.print_debug("[-] update_burp_wp cannot get version info")
-        except:
-            self.print_debug("[-] update_burp_wp update error: {}".format(traceback.format_exc()))
-
-        finally:
-            self.lock_update_burp_wp.release()
 
     def _download_file_with_progress(self, url, file_handle, progress_divider, progress_adder):
         try:
@@ -712,10 +627,23 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
 
         return True
 
+    def scan_type_check(self, messageInfo):
+        if self.config.get('scan_type', 1) == 1:
+            threading.Thread(target=self.check_url_or_body, args=(messageInfo, "plugins",)).start()
+            threading.Thread(target=self.check_url_or_body, args=(messageInfo, "themes",)).start()
+        elif self.config.get('scan_type', 1) == 2:
+            threading.Thread(target=self.check_url_or_body, args=(messageInfo, "plugins",)).start()
+        elif self.config.get('scan_type', 1) == 3:
+            threading.Thread(target=self.check_url_or_body, args=(messageInfo, "themes",)).start()
+
+    # implement IScannerCheck
+    def doPassiveScan(self, baseRequestResponse):
+        self.scan_type_check(baseRequestResponse)
+        return None
+
     # implement IHttpListener
     def processHttpMessage(self, toolFlag, messageIsRequest, messageInfo):
-        # process only responses
-        if messageIsRequest:
+        if self.is_burp_pro or messageIsRequest:
             return
 
         # We are interested only with valid requests
@@ -724,13 +652,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
             return
 
         if toolFlag == IBurpExtenderCallbacks.TOOL_PROXY:
-            if self.config.get('scan_type', 1) == 1:
-                self.check_url_or_body(messageInfo, "plugins")
-                self.check_url_or_body(messageInfo, "themes")
-            elif self.config.get('scan_type', 1) == 2:
-                self.check_url_or_body(messageInfo, "plugins")
-            elif self.config.get('scan_type', 1) == 3:
-                self.check_url_or_body(messageInfo, "themes")
+            self.scan_type_check(messageInfo)
 
     def check_url_or_body(self, base_request_response, _type):
         if self.config.get('full_body', False):
