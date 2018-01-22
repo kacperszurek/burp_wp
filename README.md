@@ -236,6 +236,8 @@ There are 3 types:
   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
   SOFTWARE.
 
+  The WPScan data is licensed separately. Please find the WPScan license [here](https://raw.githubusercontent.com/wpscanteam/wpscan/master/LICENSE).
+
 # Changelog
 
 * 0.1 - Beta version
