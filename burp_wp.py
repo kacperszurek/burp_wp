@@ -7,6 +7,8 @@
 # MIT License
 #
 # Copyright (c) 2018 Kacper Szurek
+from __future__ import print_function
+
 import collections
 import hashlib
 import json
@@ -83,7 +85,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
             self.callbacks.printOutput(message)
 
     def registerExtenderCallbacks(self, callbacks):
-        print "Burp WP version {}".format(BURP_WP_VERSION)
+        print("Burp WP version {}".format(BURP_WP_VERSION))
 
         self.callbacks = callbacks
         self.helpers = callbacks.getHelpers()
@@ -553,8 +555,8 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                                                                   "Burp WP updated successfully, please reload extension")
                                     self.callbacks.unloadExtension()
                                 except:
-                                    print "[-] update_burp_wp cannot write new version: {}".format(
-                                        traceback.format_exc())
+                                    print("[-] update_burp_wp cannot write new version: {}".format(
+                                        traceback.format_exc()))
                                     JOptionPane.showMessageDialog(self.panel_main,
                                                                   "Burp WP update failed, see debug log")
                             else:
