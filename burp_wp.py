@@ -70,7 +70,7 @@ from javax.swing.event import DocumentListener
 from javax.swing.table import AbstractTableModel
 from org.python.core.util import StringUtil
 
-BURP_WP_VERSION = '0.1.1'
+BURP_WP_VERSION = '0.1.2'
 INTERESTING_CODES = [200, 401, 403, 301]
 DB_NAME = "burp_wp_database.db"
 
@@ -85,13 +85,13 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
     def registerExtenderCallbacks(self, callbacks):
         self.callbacks = callbacks
 
-        self.callbacks.printOutput("Burp WP version {}".format(BURP_WP_VERSION))
+        self.callbacks.printOutput("WordPress Scanner version {}".format(BURP_WP_VERSION))
 
         self.helpers = callbacks.getHelpers()
 
         self.initialize_config()
 
-        self.callbacks.setExtensionName("Burp WP")
+        self.callbacks.setExtensionName("WordPress Scanner")
 
         # createMenuItems
         self.callbacks.registerContextMenuFactory(self)
@@ -326,7 +326,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         panel_copyright.setLayout(BoxLayout(panel_copyright, BoxLayout.X_AXIS))
         panel_copyright.setAlignmentX(Component.LEFT_ALIGNMENT)
 
-        label_copyright1 = JLabel("<html><a href='#/'>Burp WP {}</a></html>".format(BURP_WP_VERSION))
+        label_copyright1 = JLabel("<html><a href='#/'>WordPress Scanner {}</a></html>".format(BURP_WP_VERSION))
         label_copyright1.setAlignmentX(Component.LEFT_ALIGNMENT)
         label_copyright1.setCursor(Cursor(Cursor.HAND_CURSOR))
         label_copyright1.addMouseListener(CopyrightMouseAdapter("https://github.com/kacperszurek/burp_wp"))
@@ -398,7 +398,8 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                 update_text = "Themes: {}, Plugins: {}, Last update: {}".format(themes_length, plugins_length,
                                                                                 last_update)
                 self.label_update.setText(update_text)
-            except:
+            except Exception as e:
+                self.label_update.setText("Cannot load database: {}".format(e))
                 self.print_debug("[-] initialize_database cannot load database: {}".format(traceback.format_exc()))
                 if not update_started:
                     self.button_force_update_on_click(None)
@@ -509,6 +510,8 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                     return
 
                 self.print_debug("[+] update_database update finish")
+        except:
+            self.print_debug("[+] update_database update error")
         finally:
             self.lock_update_database.release()
             self.progressbar_update.setValue(100)
@@ -600,12 +603,12 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                                 if len(references) != 0:
                                     bug['reference'] = references
                         if 'cve' in vulnerability:
-                            bug['cve'] = vulnerability['cve']
+                            bug['cve'] = vulnerability['cve'].encode('utf-8')
                         if 'exploitdb' in vulnerability:
-                            bug['exploitdb'] = vulnerability['exploitdb'][0]
+                            bug['exploitdb'] = vulnerability['exploitdb'][0].encode('utf-8')
                         # Sometimes there is no fixed in or its None
                         if 'fixed_in' in vulnerability and vulnerability['fixed_in']:
-                            bug['fixed_in'] = vulnerability['fixed_in']
+                            bug['fixed_in'] = vulnerability['fixed_in'].encode('utf-8')
                         else:
                             bug['fixed_in'] = '0'
                         bugs.append(bug)
@@ -712,6 +715,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                                                       _type, plugin_name, version_number, version_type, version_request)
         except:
             self.print_debug("[-] check_url error: {}".format(traceback.format_exc()))
+            return []
 
     def check_body(self, base_request_response, _type):
         response = base_request_response.getResponse()
@@ -969,7 +973,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         return issues
 
     def createMenuItems(self, invocation):
-        return [JMenuItem("Send to Burp WP Intruder",
+        return [JMenuItem("Send to WordPress Scanner Intruder",
                           actionPerformed=lambda x, inv=invocation: self.menu_send_to_intruder_on_click(inv))]
 
     def menu_send_to_intruder_on_click(self, invocation):
@@ -1016,7 +1020,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
 
     # implement ITab
     def getTabCaption(self):
-        return "Burp WP"
+        return "WordPress Scanner"
 
     def getUiComponent(self):
         return self.panel_main
