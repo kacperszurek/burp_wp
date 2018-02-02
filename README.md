@@ -1,4 +1,4 @@
-# Burp WP
+# Burp WP a.k.a. WordPress Scanner
 
 ![Burp WP](images/logo.svg)
 
@@ -29,19 +29,30 @@ If you have Burp Pro, issues will also appear inside *Scanner* tab. Interesting 
 
 # Installation
 
-1. Download [Jython](http://www.jython.org/downloads.html) standalone JAR, for example version [2.7](http://search.maven.org/remotecontent?filepath=org/python/jython-standalone/2.7.0/jython-standalone-2.7.0.jar)
-2. Go to **Extender->Options**. Set path inside `Location of Jython standalone JAR file`
+WordPress Scanner is available inside [BApp Store](https://portswigger.net/bappstore).
+  1. Inside Burp go to **Extender->BApp Store**
+  2. Choose WordPress Scanner
 
-![Install Jython](images/install_jython.png)
+  ![WordPress Scanner](images/bapp_store_1.png)
+  3. Click **Install button**
 
-3. Download [newest Burp WP](https://raw.githubusercontent.com/kacperszurek/burp_wp/master/burp_wp.py)
-4. Go to **Extender->Extensions**. Click **Add**. Set `Extension type` to `Python`. Set path inside `Extension file`.
+  ![WordPress Scanner Install](images/bapp_store_2.png)
 
-![Install Burp WP](images/install_burp_wp.png)
+You can also install Burp WP manually:
 
-5. Burp WP should appear inside `Burp Extensions list`. Also you will see new tab.
+  1. Download [Jython](http://www.jython.org/downloads.html) standalone JAR, for example version [2.7](http://search.maven.org/remotecontent?filepath=org/python/jython-standalone/2.7.0/jython-standalone-2.7.0.jar)
+  2. Go to **Extender->Options**. Set path inside `Location of Jython standalone JAR file`
 
-![Installed extension](images/installed.png)
+  ![Install Jython](images/install_jython.png)
+
+  3. Download [newest Burp WP](https://raw.githubusercontent.com/kacperszurek/burp_wp/master/burp_wp.py)
+  4. Go to **Extender->Extensions**. Click **Add**. Set `Extension type` to `Python`. Set path inside `Extension file`.
+
+  ![Install Burp WP](images/install_burp_wp.png)
+
+  5. Burp WP should appear inside `Burp Extensions list`. Also you will see new tab.
+
+  ![Installed extension](images/installed.png)
 
 # Issue type
 
@@ -240,4 +251,5 @@ There are 3 types:
 
 # Changelog
 
+* 0.1.1 - Updates are downloaded through Burp proxy, fix clear list issues button, implement doPassiveScan function
 * 0.1 - Beta version

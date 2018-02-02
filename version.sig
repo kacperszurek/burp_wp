@@ -1,2 +1,2 @@
-{"version_number": "0.1", "url": "https://raw.githubusercontent.com/kacperszurek/burp_wp/master/burp_wp.py", "sha256": "13c81cca2016c071792018b7a63ff47baf8dc402ab01f887207d344451e71ec8", "changelog": "Beta 0.1 release"}
-MCwCFHBROHKJw4vgy3UKBVFOz1a+LKd6AhRAW7QmTah85PM1lAWEuRAVICyIAA==
+{"version_number": "0.1.1", "url": "https://raw.githubusercontent.com/kacperszurek/burp_wp/master/burp_wp.py", "sha256": "ee930e352d78e1f3d99f84d0a59159d48c2028d1c4d9523d798d783b74e68e7f", "changelog": "Updates are downloaded through Burp proxy, fix clear list issues button, implement doPassiveScan function"}
+MC0CFGHFQARxRIEGZsZABQIyFjGK0qO6AhUAixjldjIlWziv868I1qtEfz+AWL8=

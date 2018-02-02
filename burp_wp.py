@@ -13,11 +13,9 @@ import json
 import os
 import re
 import shutil
-import tempfile
 import threading
 import time
 import traceback
-import urllib2
 import urlparse
 from array import array
 from base64 import b64encode, b64decode
@@ -36,6 +34,7 @@ from burp import IMessageEditorController
 from burp import IParameter
 from burp import IScanIssue
 from burp import ITab
+from burp import IScannerCheck
 
 from java.awt import Component
 from java.awt import Cursor
@@ -70,12 +69,12 @@ from javax.swing.event import DocumentListener
 from javax.swing.table import AbstractTableModel
 from org.python.core.util import StringUtil
 
-BURP_WP_VERSION = '0.1'
+BURP_WP_VERSION = '0.1.1'
 INTERESTING_CODES = [200, 401, 403, 301]
 DB_NAME = "burp_wp_database.db"
 
 
-class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMessageEditorController):
+class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMessageEditorController, IScannerCheck):
     config = {}
 
     def print_debug(self, message):
@@ -83,9 +82,10 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
             self.callbacks.printOutput(message)
 
     def registerExtenderCallbacks(self, callbacks):
-        print "Burp WP version {}".format(BURP_WP_VERSION)
-
         self.callbacks = callbacks
+
+        self.callbacks.printOutput("Burp WP version {}".format(BURP_WP_VERSION))
+
         self.helpers = callbacks.getHelpers()
 
         self.initialize_config()
@@ -101,6 +101,9 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         self.callbacks.registerIntruderPayloadGeneratorFactory(IntruderPluginsGenerator(self))
         self.callbacks.registerIntruderPayloadGeneratorFactory(IntruderThemesGenerator(self))
         self.callbacks.registerIntruderPayloadGeneratorFactory(IntruderPluginsThemesGenerator(self))
+
+        # doPassiveScan
+        self.callbacks.registerScannerCheck(self)
 
         self.initialize_variables()
         self.initialize_gui()
@@ -225,7 +228,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
 
         panel_upper.add(panel_update)
 
-        checkbox_active_scan = JCheckBox("Use readme.txt for detecting plugins version",
+        checkbox_active_scan = JCheckBox("Use readme.txt for detecting plugins version. This option sends additional request to website",
                                          self.config.get('active_scan', False))
         checkbox_active_scan.addItemListener(CheckboxListener(self, "active_scan"))
         panel_upper.add(checkbox_active_scan)
@@ -395,7 +398,8 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                 update_text = "Themes: {}, Plugins: {}, Last update: {}".format(themes_length, plugins_length,
                                                                                 last_update)
                 self.label_update.setText(update_text)
-            except:
+            except Exception as e:
+                self.label_update.setText("Cannot load database: {}".format(e))
                 self.print_debug("[-] initialize_database cannot load database: {}".format(traceback.format_exc()))
                 if not update_started:
                     self.button_force_update_on_click(None)
@@ -419,19 +423,31 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         JOptionPane.showMessageDialog(self.panel_main, "Please reload extension")
         self.callbacks.unloadExtension()
 
+    def clear_issues(self):
+        if not self.lock_issues.acquire(False):
+            self.print_debug("[*] clear_issues cannot acquire lock")
+            return
+        try:
+            self.print_debug("[+] clear_issues lock acquired")
+            row = self.list_issues.size()
+            if row > 0:
+                self.list_issues.clear()
+                self.table_issues.fireTableRowsDeleted(0, (row-1))
+                self.panel_bottom_advisory.setText("")
+                self.panel_bottom_request1.setMessage("", True)
+                self.panel_bottom_response1.setMessage("", False)
+                self.panel_bottom_request2.setMessage("", True)
+                self.panel_bottom_response2.setMessage("", False)
+                self.list_plugins_on_website.clear()
+        except:
+            self.print_debug("[+] clear_issues error: {}".format(traceback.format_exc()))
+        finally:
+            self.lock_issues.release()
+            self.print_debug("[+] clear_issues lock release")
+
     def button_clear_issues_on_click(self, msg):
         self.print_debug("[+] button_clear_issues_on_click")
-        self.lock_issues.acquire()
-        row = self.list_issues.size()
-        self.list_issues.clear()
-        self.table_issues.fireTableRowsDeleted(0, row)
-        self.panel_bottom_advisory.setText("")
-        self.panel_bottom_request1.setMessage("", True)
-        self.panel_bottom_response1.setMessage("", False)
-        self.panel_bottom_request2.setMessage("", True)
-        self.panel_bottom_response2.setMessage("", False)
-        self.lock_issues.release()
-        self.list_plugins_on_website = defaultdict(list)
+        threading.Thread(target=self.clear_issues).start()        
 
     def button_update_on_click(self, msg):
         threading.Thread(target=self.update_database_wrapper).start()
@@ -525,14 +541,14 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
             self.print_debug("[*] update_burp_wp already running")
             return
         try:
-            version_content = urllib2.urlopen("https://raw.githubusercontent.com/kacperszurek/burp_wp/master/version.sig", timeout=5).read()
+            version_content = self._make_http_request_wrapper("https://raw.githubusercontent.com/kacperszurek/burp_wp/master/version.sig")
             if len(version_content) > 2:
                 version_verified = self.verify_update_message(version_content)
                 if version_verified:
                     if LooseVersion(BURP_WP_VERSION) < LooseVersion(
                             version_verified['version_number']) and LooseVersion(
                         version_verified['version_number']) > LooseVersion(self.config.get('update_burp_wp', '0')):
-                        new_file = urllib2.urlopen(version_verified['url'], timeout=5).read()
+                        new_file = self._make_http_request_wrapper(version_verified['url'])
                         sha = hashlib.new('sha256')
                         sha.update(new_file)
                         if version_verified['sha256'] == sha.hexdigest():
@@ -576,32 +592,6 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         finally:
             self.lock_update_burp_wp.release()
 
-    def _download_file_with_progress(self, url, file_handle, progress_divider, progress_adder):
-        try:
-            hash_sha512 = hashlib.sha512()
-            opened_url = urllib2.urlopen(url, timeout=5)
-            meta = opened_url.info()
-            original_file_size = int(meta.getheaders("Content-Length")[0])
-            self.print_debug("[*] _download_file_with_progress {}".format(url))
-
-            downloaded_file_size = 0
-            block_size = 8192 * 32
-            while True:
-                _buffer = opened_url.read(block_size)
-                if not _buffer:
-                    break
-
-                downloaded_file_size += len(_buffer)
-                file_handle.write(_buffer)
-                hash_sha512.update(_buffer)
-                percent = int((downloaded_file_size * 100. / original_file_size) / progress_divider) + progress_adder
-                self.progressbar_update.setValue(percent)
-                self.progressbar_update.setStringPainted(True)
-            return hash_sha512.hexdigest()
-        except:
-            self.print_debug("[-] _download_file_with_progress cannot download file: {}".format(traceback.format_exc()))
-            return False
-
     def update_database_wrapper(self):
         if not self.lock_update_database.acquire(False):
             self.print_debug("[*] update_database update already running")
@@ -620,27 +610,42 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                     return
 
                 self.print_debug("[+] update_database update finish")
+        except:
+            self.print_debug("[+] update_database update error")
         finally:
             self.lock_update_database.release()
             self.progressbar_update.setValue(100)
             self.progressbar_update.setStringPainted(True)
             self.button_update.setEnabled(True)
 
+    def _make_http_request_wrapper(self, original_url):
+        try:
+            java_url = URL(original_url)
+            request = self.helpers.buildHttpRequest(java_url)
+            response = self.callbacks.makeHttpRequest(java_url.getHost(), 443, True, request)           
+            response_info = self.helpers.analyzeResponse(response)
+            if response_info.getStatusCode() in INTERESTING_CODES:
+                return self.helpers.bytesToString(response)[response_info.getBodyOffset():].encode("latin1")
+            else:
+                self.print_debug("[-] _make_http_request_wrapper request failed")
+                return None
+        except:
+            self.print_debug("[-] _make_http_request_wrapper failed: {}".format(traceback.format_exc()))
+            return None
+
     def _update_database(self):
         dict_files = {'plugins': 'https://data.wpscan.org/plugins.json',
                       'themes': 'https://data.wpscan.org/themes.json'}
+
         progress_divider = len(dict_files) * 2
         progress_adder = 0
         for _type, url in dict_files.iteritems():
             try:
                 temp_database = collections.OrderedDict()
-                sha_url = "{}.sha512".format(url)
 
-                try:
-                    sha_original = urllib2.urlopen(sha_url, timeout=5).read()
-                except:
-                    self.print_debug(
-                        '[-] _update_database cannot download {} - {}'.format(sha_url, traceback.format_exc()))
+                sha_url = "{}.sha512".format(url)
+                sha_original = self._make_http_request_wrapper(sha_url)
+                if not sha_original:
                     return False
 
                 if self.config.get('sha_{}'.format(_type), '') == sha_original:
@@ -648,19 +653,25 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                     progress_adder += int(100 / len(dict_files))
                     continue
 
-                temporary_file = tempfile.TemporaryFile()
-                downloaded_sha = self._download_file_with_progress(url, temporary_file, progress_divider,
-                                                                   progress_adder)
+                self.progressbar_update.setValue(25+progress_adder)
+                self.progressbar_update.setStringPainted(True)
 
-                if not downloaded_sha or sha_original != downloaded_sha:
+                downloaded_data = self._make_http_request_wrapper(url)
+                if not downloaded_data:
+                    return False
+                
+                hash_sha512 = hashlib.sha512()
+                hash_sha512.update(downloaded_data)
+                downloaded_sha = hash_sha512.hexdigest()
+
+                if sha_original != downloaded_sha:
                     self.print_debug(
                         "[-] _update_database hash mismatch for {}, should be: {} is: {}".format(_type, sha_original,
                                                                                                  downloaded_sha))
                     return False
+
                 try:
-                    # We need to seek handle so json load from file beginning
-                    temporary_file.seek(0)
-                    loaded_json = json.load(temporary_file)
+                    loaded_json = json.loads(downloaded_data)
                 except:
                     self.print_debug(
                         "[-] _update_database cannot decode json for {}: {}".format(_type, traceback.format_exc()))
@@ -692,12 +703,12 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                                 if len(references) != 0:
                                     bug['reference'] = references
                         if 'cve' in vulnerability:
-                            bug['cve'] = vulnerability['cve']
+                            bug['cve'] = vulnerability['cve'].encode('utf-8')
                         if 'exploitdb' in vulnerability:
-                            bug['exploitdb'] = vulnerability['exploitdb'][0]
+                            bug['exploitdb'] = vulnerability['exploitdb'][0].encode('utf-8')
                         # Sometimes there is no fixed in or its None
                         if 'fixed_in' in vulnerability and vulnerability['fixed_in']:
-                            bug['fixed_in'] = vulnerability['fixed_in']
+                            bug['fixed_in'] = vulnerability['fixed_in'].encode('utf-8')
                         else:
                             bug['fixed_in'] = '0'
                         bugs.append(bug)
@@ -712,10 +723,36 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
 
         return True
 
+    def scan_type_check(self, messageInfo, as_thread):
+        if as_thread:
+            if self.config.get('scan_type', 1) == 1:
+                threading.Thread(target=self.check_url_or_body, args=(messageInfo, "plugins",)).start()
+                threading.Thread(target=self.check_url_or_body, args=(messageInfo, "themes",)).start()
+            elif self.config.get('scan_type', 1) == 2:
+                threading.Thread(target=self.check_url_or_body, args=(messageInfo, "plugins",)).start()
+            elif self.config.get('scan_type', 1) == 3:
+                threading.Thread(target=self.check_url_or_body, args=(messageInfo, "themes",)).start()
+        else:
+            issues = []
+            if self.config.get('scan_type', 1) == 1:
+                issues += self.check_url_or_body(messageInfo, "plugins")
+                issues += self.check_url_or_body(messageInfo, "themes")
+            elif self.config.get('scan_type', 1) == 2:
+                issues += self.check_url_or_body(messageInfo, "plugins")
+            elif self.config.get('scan_type', 1) == 3:
+                issues += self.check_url_or_body(messageInfo, "themes")
+            return issues
+
+    # implement IScannerCheck
+    def doPassiveScan(self, baseRequestResponse):
+        return self.scan_type_check(baseRequestResponse, False)
+
+    def consolidateDuplicateIssues(self, existingIssue, newIssue):
+        return 1
+
     # implement IHttpListener
     def processHttpMessage(self, toolFlag, messageIsRequest, messageInfo):
-        # process only responses
-        if messageIsRequest:
+        if self.is_burp_pro or messageIsRequest:
             return
 
         # We are interested only with valid requests
@@ -724,19 +761,13 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
             return
 
         if toolFlag == IBurpExtenderCallbacks.TOOL_PROXY:
-            if self.config.get('scan_type', 1) == 1:
-                self.check_url_or_body(messageInfo, "plugins")
-                self.check_url_or_body(messageInfo, "themes")
-            elif self.config.get('scan_type', 1) == 2:
-                self.check_url_or_body(messageInfo, "plugins")
-            elif self.config.get('scan_type', 1) == 3:
-                self.check_url_or_body(messageInfo, "themes")
+            self.scan_type_check(messageInfo, True)
 
     def check_url_or_body(self, base_request_response, _type):
         if self.config.get('full_body', False):
-            self.check_body(base_request_response, _type)
+            return self.check_body(base_request_response, _type)
         else:
-            self.check_url(base_request_response, _type)
+            return self.check_url(base_request_response, _type)
 
     def check_url(self, base_request_response, _type):
         try:
@@ -746,7 +777,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
             url = str(self.helpers.analyzeRequest(base_request_response).getUrl())
             wp_content_begin_in_url = self.helpers.indexOf(url, wp_content_pattern, True, 0, len(url))
             if wp_content_begin_in_url == -1:
-                return
+                return []
 
             regexp_plugin_name = re.compile(
                 "{}/{}/([A-Za-z0-9_-]+)".format(self.config.get('wp_content', 'wp-content'), _type), re.IGNORECASE)
@@ -780,10 +811,12 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                             markers.append(
                                 array('i', [version_number_begin, version_number_begin + len(version_number)]))
 
-                    self.is_vulnerable_plugin_version(self.callbacks.applyMarkers(base_request_response, markers, None),
+                    return self.is_vulnerable_plugin_version(self.callbacks.applyMarkers(base_request_response, markers, None),
                                                       _type, plugin_name, version_number, version_type, version_request)
+            return []
         except:
             self.print_debug("[-] check_url error: {}".format(traceback.format_exc()))
+            return []
 
     def check_body(self, base_request_response, _type):
         response = base_request_response.getResponse()
@@ -791,7 +824,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
             "{}/{}/".format(self.config.get('wp_content', 'wp-content'), _type))
         matches = self.find_pattern_in_data(response, wp_content_pattern)
         if not matches:
-            return
+            return []
 
         url = str(self.helpers.analyzeRequest(base_request_response).getUrl())
         current_domain = self.normalize_url(url)
@@ -799,6 +832,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         regexp_plugin_name = re.compile(
             "{}/{}/([A-Za-z0-9_-]+)".format(self.config.get('wp_content', 'wp-content'), _type), re.IGNORECASE)
 
+        issues = []
         for wp_content_start, wp_content_stop in matches:
             # For performance reason only part of reponse
             response_partial_after = self.helpers.bytesToString(
@@ -813,7 +847,6 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
 
                     markers = [array('i', [wp_content_start, wp_content_stop + len(plugin_name)])]
 
-                    # url_begin_index = next((i for i, ch in enumerate(response_partial_before[::-1]) if ch in {"'", "\"", "("}), None)
                     version_type = 'active'
                     version_number = '0'
                     version_request = None
@@ -847,9 +880,10 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                                                            wp_content_start + version_marker_start + len(
                                                                version_number)]))
 
-                    self.is_vulnerable_plugin_version(self.callbacks.applyMarkers(base_request_response, None, markers),
+                    issues += self.is_vulnerable_plugin_version(self.callbacks.applyMarkers(base_request_response, None, markers),
                                                       _type, plugin_name, version_number, version_type, version_request)
 
+        return issues
     def find_pattern_in_data(self, data, pattern):
         matches = []
         start = 0
@@ -889,14 +923,12 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         return current_domain
 
     def add_issue_wrapper(self, issue):
-        if self.is_burp_pro:
-            self.callbacks.addScanIssue(issue)
-
         self.lock_issues.acquire()
         row = self.list_issues.size()
         self.list_issues.add(issue)
         self.table_issues.fireTableRowsInserted(row, row)
         self.lock_issues.release()
+        return issue
 
     def active_scan(self, current_domain, _type, plugin_name, base_request_response):
         current_version = '0'
@@ -989,7 +1021,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
     def is_vulnerable_plugin_version(self, base_request_response, _type, plugin_name, version_number, version_type,
                                      version_request):
         has_vuln = False
-
+        issues = []
         if version_type == 'active' and version_number != '0':
             requests = [base_request_response, version_request]
         else:
@@ -1007,37 +1039,39 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                         "[+] is_vulnerable_plugin_version vulnerability inside {} version {}".format(plugin_name,
                                                                                                      version_number))
                     has_vuln = True
-                    self.add_issue_wrapper(CustomScanIssue(
+                    issues.append(self.add_issue_wrapper(CustomScanIssue(
                         url,
                         requests,
                         "{} inside {} {} version {}".format(bug['vuln_type'], _type[:-1], plugin_name, version_number),
                         self.parse_bug_details(bug, plugin_name, _type),
-                        "High", "Certain" if version_type == 'active' else "Firm"))
+                        "High", "Certain" if version_type == 'active' else "Firm")))
                 elif self.config.get('all_vulns', False):
                     self.print_debug(
                         "[+] is_vulnerable_plugin_version potential vulnerability inside {} version {}".format(
                             plugin_name, version_number))
                     has_vuln = True
-                    self.add_issue_wrapper(CustomScanIssue(
+                    issues.append(self.add_issue_wrapper(CustomScanIssue(
                         url,
                         requests,
                         "Potential {} inside {} {} fixed in {}".format(bug['vuln_type'], _type[:-1], plugin_name,
                                                                        bug['fixed_in']),
                         self.parse_bug_details(bug, plugin_name, _type),
-                        "Information", "Certain"))
+                        "Information", "Certain")))
 
         if not has_vuln and self.config.get('print_info', False):
             print_info_details = "Found {} {}".format(_type[:-1], plugin_name)
             if version_number != '0':
                 print_info_details += " version {}".format(version_number)
             self.print_debug("[+] is_vulnerable_plugin_version print info: {}".format(print_info_details))
-            self.add_issue_wrapper(CustomScanIssue(
+            issues.append(self.add_issue_wrapper(CustomScanIssue(
                 url,
                 requests,
                 print_info_details,
                 "{}<br /><a href='https://wordpress.org/{type}/{plugin_name}'>https://wordpress.org/{type}/{plugin_name}</a>".format(
                     print_info_details, type=_type, plugin_name=plugin_name),
-                "Information", "Certain" if version_type == 'active' and version_number != '0' else "Firm"))
+                "Information", "Certain" if version_type == 'active' and version_number != '0' else "Firm")))
+
+        return issues
 
     def createMenuItems(self, invocation):
         return [JMenuItem("Send to Burp WP Intruder",
