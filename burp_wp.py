@@ -422,19 +422,31 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         JOptionPane.showMessageDialog(self.panel_main, "Please reload extension")
         self.callbacks.unloadExtension()
 
+    def clear_issues(self):
+        if not self.lock_issues.acquire(False):
+            self.print_debug("[*] clear_issues cannot acquire lock")
+            return
+        try:
+            self.print_debug("[+] clear_issues lock acquired")
+            row = self.list_issues.size()
+            if row > 0:
+                self.list_issues.clear()
+                self.table_issues.fireTableRowsDeleted(0, (row-1))
+                self.panel_bottom_advisory.setText("")
+                self.panel_bottom_request1.setMessage("", True)
+                self.panel_bottom_response1.setMessage("", False)
+                self.panel_bottom_request2.setMessage("", True)
+                self.panel_bottom_response2.setMessage("", False)
+                self.list_plugins_on_website.clear()
+        except:
+            self.print_debug("[+] clear_issues error: {}".format(traceback.format_exc()))
+        finally:
+            self.lock_issues.release()
+            self.print_debug("[+] clear_issues lock release")
+
     def button_clear_issues_on_click(self, msg):
         self.print_debug("[+] button_clear_issues_on_click")
-        self.lock_issues.acquire()
-        row = self.list_issues.size()
-        self.list_issues.clear()
-        self.table_issues.fireTableRowsDeleted(0, row)
-        self.panel_bottom_advisory.setText("")
-        self.panel_bottom_request1.setMessage("", True)
-        self.panel_bottom_response1.setMessage("", False)
-        self.panel_bottom_request2.setMessage("", True)
-        self.panel_bottom_response2.setMessage("", False)
-        self.lock_issues.release()
-        self.list_plugins_on_website = defaultdict(list)
+        threading.Thread(target=self.clear_issues).start()        
 
     def button_update_on_click(self, msg):
         threading.Thread(target=self.update_database_wrapper).start()
@@ -713,6 +725,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
 
                     return self.is_vulnerable_plugin_version(self.callbacks.applyMarkers(base_request_response, markers, None),
                                                       _type, plugin_name, version_number, version_type, version_request)
+            return []
         except:
             self.print_debug("[-] check_url error: {}".format(traceback.format_exc()))
             return []
