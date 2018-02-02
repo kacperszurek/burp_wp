@@ -34,6 +34,7 @@ WordPress Scanner is available inside [BApp Store](https://portswigger.net/bapps
   2. Choose WordPress Scanner
 
   ![WordPress Scanner](images/bapp_store_1.png)
+  
   3. Click **Install button**
 
   ![WordPress Scanner Install](images/bapp_store_2.png)
