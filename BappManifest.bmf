@@ -1,0 +1,12 @@
+Uuid: 77a12b2966844f04bba032de5744cd35
+ExtensionType: 2
+Name: WordPress Scanner
+RepoName: wordpress-scanner
+ScreenVersion: 1.0
+SerialVersion: 0
+MinPlatformVersion: 0
+ProOnly: False
+Author: Kacper Szurek
+ShortDescription: Find known vulnerabilities in WordPress plugins and themes using WPScan database.
+EntryPoint: burp_wp.py
+BuildCommand: 
