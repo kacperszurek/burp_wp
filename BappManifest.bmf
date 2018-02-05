@@ -2,8 +2,8 @@ Uuid: 77a12b2966844f04bba032de5744cd35
 ExtensionType: 2
 Name: WordPress Scanner
 RepoName: wordpress-scanner
-ScreenVersion: 1.0
-SerialVersion: 0
+ScreenVersion: 1.1
+SerialVersion: 1
 MinPlatformVersion: 0
 ProOnly: False
 Author: Kacper Szurek
