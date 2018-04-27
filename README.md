@@ -234,11 +234,11 @@ There are 3 types:
 
   It discovers plugins based on calls to `wp-admin/admin-ajax.php` endpoint.
 
-	Custom [action database](https://github.com/kacperszurek/burp_wp/edit/master/data/admin_ajax.json) is used for this.
+  Custom [action database](https://github.com/kacperszurek/burp_wp/blob/master/data/admin_ajax.json) is used for this.
 
-	Basically when plugin send request to `/admin-ajax.php?action=akismet_recheck_queue` Burp WP makes reverse lookup in action database.
+  Basically when plugin send request to `/admin-ajax.php?action=akismet_recheck_queue` Burp WP makes reverse lookup in action database.
 
-	![Wp-ajax detection technique](images/wp_ajax.png)  
+  ![Wp-ajax detection technique](images/wp_ajax.png)  
 
 # License
   MIT License
