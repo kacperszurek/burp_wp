@@ -662,11 +662,11 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
             issues = []
             if self.config.get('scan_type', 1) == 1:
                 issues += self.check_url_or_body(messageInfo, "plugins")
-                issues += self.check_url_or_body(messageInfo, "themes")
+                issues += (self.check_url_or_body(messageInfo, "themes") or [])
             elif self.config.get('scan_type', 1) == 2:
                 issues += self.check_url_or_body(messageInfo, "plugins")
             elif self.config.get('scan_type', 1) == 3:
-                issues += self.check_url_or_body(messageInfo, "themes")
+                issues += self.check_url_or_body(messageInfo, "themes")  or [])
 
             if self.config.get('admin_ajax', True):
                 issues += self.check_admin_ajax(messageInfo)
