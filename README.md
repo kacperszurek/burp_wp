@@ -24,6 +24,7 @@ If you have Burp Pro, issues will also appear inside *Scanner* tab. Interesting 
 * [Options](#options)
 * [Offline database](#offline-database)
 * [Intruder payload generator](#intruder-payload-generator)
+* [Detect plugins using wp-ajax.php](#detect-plugins-using-wp-ajaxphp)
 * [License](#license)
 * [Changelog](#changelog)
 
@@ -187,6 +188,9 @@ There are 3 types:
 
   Restore extension state to factory defaults.
 
+13. Discover plugins using wp-ajax.php
+	See [Detect plugins using wp-ajax.php](#detect-plugins-using-wp-ajaxphp).
+
 # Offline database
   All vulnerabilities are provided by [WPscan](https://wpscan.org/) - see [Vulnerability Database](https://wpvulndb.com).
 
@@ -225,6 +229,17 @@ There are 3 types:
 
   ![Intruder attack](images/intruder_attack.png)
 
+# Detect plugins using wp-ajax.php
+  This is new technique available since Burp WP 0.2.
+
+  It discovers plugins based on calls to `wp-admin/admin-ajax.php` endpoint.
+
+	Custom [action database](https://github.com/kacperszurek/burp_wp/edit/master/data/admin_ajax.json) is used for this.
+
+	Basically when plugin send request to `/admin-ajax.php?action=akismet_recheck_queue` Burp WP makes reverse lookup in action database.
+
+	![Wp-ajax detection technique](images/wp_ajax.png)  
+
 # License
   MIT License
 
@@ -252,5 +267,6 @@ There are 3 types:
 
 # Changelog
 
+* 0.2 - Add discovery plugins using `wp-ajax.php?action`
 * 0.1.1 - Updates are downloaded through Burp proxy, fix clear list issues button, implement doPassiveScan function
 * 0.1 - Beta version

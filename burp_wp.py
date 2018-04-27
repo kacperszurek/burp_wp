@@ -69,7 +69,7 @@ from javax.swing.event import DocumentListener
 from javax.swing.table import AbstractTableModel
 from org.python.core.util import StringUtil
 
-BURP_WP_VERSION = '0.1.1'
+BURP_WP_VERSION = '0.2'
 INTERESTING_CODES = [200, 401, 403, 301]
 DB_NAME = "burp_wp_database.db"
 
@@ -127,7 +127,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
             self.config = {'active_scan': True, 'database_path': os.path.join(os.getcwd(), DB_NAME),
                            'wp_content': 'wp-content', 'full_body': False, 'all_vulns': False, 'scan_type': 1,
                            'debug': False, 'auto_update': True, 'last_update': 0, 'sha_plugins': '', 'sha_themes': '',
-                           'print_info': False, 'update_burp_wp': '0'}
+                           'sha_admin_ajax': '', 'print_info': False, 'admin_ajax': True, 'update_burp_wp': '0'}
 
     def initialize_variables(self):
         self.is_burp_pro = True if "Professional" in self.callbacks.getBurpVersion()[0] else False
@@ -142,7 +142,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         self.lock_update_database = Lock()
         self.lock_update_burp_wp = Lock()
 
-        self.database = {'plugins': collections.OrderedDict(), 'themes': collections.OrderedDict()}
+        self.database = {'plugins': collections.OrderedDict(), 'themes': collections.OrderedDict(), 'admin_ajax': {}}
         self.list_plugins_on_website = defaultdict(list)
 
     def initialize_gui(self):
@@ -248,6 +248,12 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
             self.config.get('print_info', False))
         checkbox_print_info.addItemListener(CheckboxListener(self, "print_info"))
         panel_upper.add(checkbox_print_info)
+
+        checkbox_admin_ajax = JCheckBox(
+            "Discover plugins using wp-ajax.php?action= technique",
+            self.config.get('admin_ajax', True))
+        checkbox_admin_ajax.addItemListener(CheckboxListener(self, "admin_ajax"))
+        panel_upper.add(checkbox_admin_ajax)
 
         checkbox_auto_update = JCheckBox("Enable auto update", self.config.get('auto_update', True))
         checkbox_auto_update.addItemListener(CheckboxListener(self, "auto_update"))
@@ -395,7 +401,8 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                     self.database = json.load(fp)
                 themes_length = len(self.database['themes'])
                 plugins_length = len(self.database['plugins'])
-                update_text = "Themes: {}, Plugins: {}, Last update: {}".format(themes_length, plugins_length,
+                admin_ajax_length = len(self.database.get('admin_ajax', {}))
+                update_text = "Themes: {}, Plugins: {}, Admin ajax: {}, Last update: {}".format(themes_length, plugins_length, admin_ajax_length,
                                                                                 last_update)
                 self.label_update.setText(update_text)
             except Exception as e:
@@ -499,7 +506,8 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                 last_update = time.strftime("%d-%m-%Y %H:%M", time.localtime(self.config.get('last_update', 0)))
                 themes_length = len(self.database['themes'])
                 plugins_length = len(self.database['plugins'])
-                update_text = "Themes: {}, Plugins: {}, Last update: {}".format(themes_length, plugins_length,
+                admin_ajax_length = len(self.database.get('admin_ajax', {}))
+                update_text = "Themes: {}, Plugins: {}, Admin ajax: {}, Last update: {}".format(themes_length, plugins_length, admin_ajax_length,
                                                                                 last_update)
                 self.label_update.setText(update_text)
                 self.print_debug("[*] {}".format(update_text))
@@ -635,7 +643,8 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
 
     def _update_database(self):
         dict_files = {'plugins': 'https://data.wpscan.org/plugins.json',
-                      'themes': 'https://data.wpscan.org/themes.json'}
+                      'themes': 'https://data.wpscan.org/themes.json',
+                      'admin_ajax': 'https://raw.githubusercontent.com/kacperszurek/burp_wp/master/data/admin_ajax.json'}
 
         progress_divider = len(dict_files) * 2
         progress_adder = 0
@@ -653,7 +662,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                     progress_adder += int(100 / len(dict_files))
                     continue
 
-                self.progressbar_update.setValue(25+progress_adder)
+                self.progressbar_update.setValue(int(100/progress_divider)+progress_adder)
                 self.progressbar_update.setStringPainted(True)
 
                 downloaded_data = self._make_http_request_wrapper(url)
@@ -677,42 +686,45 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                         "[-] _update_database cannot decode json for {}: {}".format(_type, traceback.format_exc()))
                     return False
 
-                i = 0
-                progress_adder += int(100 / progress_divider)
-                json_length = len(loaded_json)
-                for name in loaded_json:
-                    bugs = []
-                    i += 1
-                    if i % 1000 == 0:
-                        percent = int((i * 100. / json_length) / 4) + progress_adder
-                        self.progressbar_update.setValue(percent)
-                        self.progressbar_update.setStringPainted(True)
-                    # No bugs
-                    if len(loaded_json[name]['vulnerabilities']) == 0:
-                        continue
+                if _type == 'admin_ajax':
+                    temp_database = loaded_json
+                else:
+                    i = 0
+                    progress_adder += int(100 / progress_divider)
+                    json_length = len(loaded_json)
+                    for name in loaded_json:
+                        bugs = []
+                        i += 1
+                        if i % 1000 == 0:
+                            percent = int((i * 100. / json_length) / 4) + progress_adder
+                            self.progressbar_update.setValue(percent)
+                            self.progressbar_update.setStringPainted(True)
+                        # No bugs
+                        if len(loaded_json[name]['vulnerabilities']) == 0:
+                            continue
 
-                    for vulnerability in loaded_json[name]['vulnerabilities']:
-                        bug = {'id': vulnerability['id'], 'title': vulnerability['title'].encode('utf-8'),
-                               'vuln_type': vulnerability['vuln_type'].encode('utf-8'), 'reference': ''}
+                        for vulnerability in loaded_json[name]['vulnerabilities']:
+                            bug = {'id': vulnerability['id'], 'title': vulnerability['title'].encode('utf-8'),
+                                   'vuln_type': vulnerability['vuln_type'].encode('utf-8'), 'reference': ''}
 
-                        if 'references' in vulnerability:
-                            if 'url' in vulnerability['references']:
-                                references = []
-                                for reference_url in vulnerability['references']['url']:
-                                    references.append(reference_url.encode('utf-8'))
-                                if len(references) != 0:
-                                    bug['reference'] = references
-                        if 'cve' in vulnerability:
-                            bug['cve'] = vulnerability['cve'].encode('utf-8')
-                        if 'exploitdb' in vulnerability:
-                            bug['exploitdb'] = vulnerability['exploitdb'][0].encode('utf-8')
-                        # Sometimes there is no fixed in or its None
-                        if 'fixed_in' in vulnerability and vulnerability['fixed_in']:
-                            bug['fixed_in'] = vulnerability['fixed_in'].encode('utf-8')
-                        else:
-                            bug['fixed_in'] = '0'
-                        bugs.append(bug)
-                    temp_database[name] = bugs
+                            if 'references' in vulnerability:
+                                if 'url' in vulnerability['references']:
+                                    references = []
+                                    for reference_url in vulnerability['references']['url']:
+                                        references.append(reference_url.encode('utf-8'))
+                                    if len(references) != 0:
+                                        bug['reference'] = references
+                            if 'cve' in vulnerability:
+                                bug['cve'] = vulnerability['cve'].encode('utf-8')
+                            if 'exploitdb' in vulnerability:
+                                bug['exploitdb'] = vulnerability['exploitdb'][0].encode('utf-8')
+                            # Sometimes there is no fixed in or its None
+                            if 'fixed_in' in vulnerability and vulnerability['fixed_in']:
+                                bug['fixed_in'] = vulnerability['fixed_in'].encode('utf-8')
+                            else:
+                                bug['fixed_in'] = '0'
+                            bugs.append(bug)
+                        temp_database[name] = bugs
 
                 progress_adder += int(100 / progress_divider)
                 self.database[_type] = temp_database
@@ -732,6 +744,9 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                 threading.Thread(target=self.check_url_or_body, args=(messageInfo, "plugins",)).start()
             elif self.config.get('scan_type', 1) == 3:
                 threading.Thread(target=self.check_url_or_body, args=(messageInfo, "themes",)).start()
+            
+            if self.config.get('admin_ajax', True):
+                threading.Thread(target=self.check_admin_ajax, args=(messageInfo,)).start()
         else:
             issues = []
             if self.config.get('scan_type', 1) == 1:
@@ -741,6 +756,10 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                 issues += self.check_url_or_body(messageInfo, "plugins")
             elif self.config.get('scan_type', 1) == 3:
                 issues += self.check_url_or_body(messageInfo, "themes")
+
+            if self.config.get('admin_ajax', True):
+                issues += self.check_admin_ajax(messageInfo)
+
             return issues
 
     # implement IScannerCheck
@@ -817,6 +836,34 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         except:
             self.print_debug("[-] check_url error: {}".format(traceback.format_exc()))
             return []
+
+    def check_admin_ajax(self, base_request_response):
+        admin_ajax_pattern = bytearray("admin-ajax.php")
+        analyzed_request = self.helpers.analyzeRequest(base_request_response)
+        url = str(analyzed_request.getUrl())
+
+        is_admin_ajax = self.helpers.indexOf(url, admin_ajax_pattern, False, 0, len(url))
+        if is_admin_ajax == -1:
+            return []
+
+        issues = []
+        parameters = analyzed_request.getParameters()
+        for parameter in parameters:
+            if parameter.getName() == 'action':
+                action_value = parameter.getValue()
+                self.print_debug("[+] check_admin_ajax action_value: {}".format(action_value))
+                plugins_list = self.database.get('admin_ajax', {}).get(action_value, None)
+                if plugins_list:
+                    current_domain_not_normalized = url[0:is_admin_ajax]
+                    current_domain = self.normalize_url(current_domain_not_normalized)
+
+                    for plugin_name in plugins_list:
+                        if self.is_unique_plugin_on_website(current_domain, plugin_name):
+                            issues += self.is_vulnerable_plugin_version(base_request_response, "plugins", plugin_name, '0', 'passive', None)
+
+                break
+
+        return issues
 
     def check_body(self, base_request_response, _type):
         response = base_request_response.getResponse()
