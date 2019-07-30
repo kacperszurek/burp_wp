@@ -6,7 +6,7 @@
 #
 # MIT License
 #
-# Copyright (c) 2018 Kacper Szurek
+# Copyright (c) 2019 Kacper Szurek
 import collections
 import hashlib
 import json
@@ -69,7 +69,7 @@ from javax.swing.event import DocumentListener
 from javax.swing.table import AbstractTableModel
 from org.python.core.util import StringUtil
 
-BURP_WP_VERSION = '0.2'
+BURP_WP_VERSION = '0.3'
 INTERESTING_CODES = [200, 401, 403, 301]
 DB_NAME = "burp_wp_database.db"
 
@@ -113,6 +113,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         self.callbacks.addSuiteTab(self)
 
         self.initialize_database()
+        self.update_infos()
 
     def initialize_config(self):
         temp_config = self.callbacks.loadExtensionSetting("config")
@@ -126,8 +127,8 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
             self.print_debug("[+] initialize_config new configuration")
             self.config = {'active_scan': True, 'database_path': os.path.join(os.getcwd(), DB_NAME),
                            'wp_content': 'wp-content', 'full_body': False, 'all_vulns': False, 'scan_type': 1,
-                           'debug': False, 'auto_update': True, 'last_update': 0, 'sha_plugins': '', 'sha_themes': '',
-                           'sha_admin_ajax': '', 'print_info': False, 'admin_ajax': True, 'update_burp_wp': '0'}
+                           'debug': False, 'auto_update': True, 'last_update': 0, 'version': '0.3',
+                           'sha_admin_ajax': '', 'print_info': False, 'admin_ajax': True, 'update_burp_wp': '0', 'api_key': 'PLEASE_REPLACE'}
 
     def initialize_variables(self):
         self.is_burp_pro = True if "Professional" in self.callbacks.getBurpVersion()[0] else False
@@ -141,9 +142,22 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         self.lock_issues = Lock()
         self.lock_update_database = Lock()
         self.lock_update_burp_wp = Lock()
+        self.api_errors = 0
 
         self.database = {'plugins': collections.OrderedDict(), 'themes': collections.OrderedDict(), 'admin_ajax': {}}
         self.list_plugins_on_website = defaultdict(list)
+
+    def update_infos(self):
+        if self.config.get('sha_plugins', '') != '':
+            self.config.pop('sha_plugins', None)
+            self.config.pop('sha_themes', None)
+            self.button_clear_cache("")
+            self.update_config('api_key', 'PLEASE_REPLACE')
+            self.update_config('version', '0.3')
+            self.update_config('last_update', int(time.time()))
+            JOptionPane.showMessageDialog(self.panel_main, "It looks like you update WordPress Scanner. Since version 0.3 you need to provide valid Vulnerability Database API token. You can find it here: https://wpvulndb.com/api")
+        elif self.config.get('api_key', '') == 'PLEASE_REPLACE':
+            JOptionPane.showMessageDialog(self.panel_main, "You need to specify valid Vulnerability Database API token")
 
     def initialize_gui(self):
         class CheckboxListener(ItemListener):
@@ -167,8 +181,9 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                 self.extender.update_config(self.name, selected)
 
         class TextfieldListener(DocumentListener):
-            def __init__(self, extender):
+            def __init__(self, extender, name):
                 self.extender = extender
+                self.name = name
 
             def changedUpdate(self, document):
                 self._do(document)
@@ -180,8 +195,12 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
                 self._do(document)
 
             def _do(self, document):
-                wp_content = self.extender.textfield_wp_content.getText().replace("/", "")
-                self.extender.update_config('wp_content', wp_content)
+                if self.name == "wp_content":
+                    value = self.extender.textfield_wp_content.getText().replace("/", "")
+                elif self.name == "api_key":
+                    value = self.extender.api_key.getText().strip()
+
+                self.extender.update_config(self.name, value)
 
         class CopyrightMouseAdapter(MouseAdapter):
             def __init__(self, url):
@@ -285,7 +304,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         panel_what_detect.add(label_wp_content)
 
         self.textfield_wp_content = JTextField(self.config.get('wp_content', 'wp-content'))
-        self.textfield_wp_content.getDocument().addDocumentListener(TextfieldListener(self))
+        self.textfield_wp_content.getDocument().addDocumentListener(TextfieldListener(self, 'wp_content'))
         self.textfield_wp_content.setMaximumSize(Dimension(250, 30))
         self.textfield_wp_content.setAlignmentX(Component.LEFT_ALIGNMENT)
         panel_what_detect.add(self.textfield_wp_content)
@@ -312,6 +331,29 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
 
         panel_upper.add(panel_choose_file)
 
+        panel_api = JPanel()
+        panel_api.setLayout(BoxLayout(panel_api, BoxLayout.X_AXIS))
+        panel_api.setAlignmentX(Component.LEFT_ALIGNMENT)
+
+        label_api = JLabel("API Key: ")
+        label_api.setAlignmentX(Component.LEFT_ALIGNMENT)
+        panel_api.add(label_api)
+
+        self.api_key = JTextField(self.config.get('api_key', ''))
+        self.api_key.setMinimumSize(Dimension(500, 30))
+        self.api_key.setMaximumSize(Dimension(800, 30))
+        self.api_key.setAlignmentX(Component.LEFT_ALIGNMENT)
+        self.api_key.getDocument().addDocumentListener(TextfieldListener(self, 'api_key'))
+        panel_api.add(self.api_key)
+
+        label_api_key = JLabel("<html>&nbsp; <a href='#'>Request API Key</a></html>")
+        label_api_key.setCursor(Cursor(Cursor.HAND_CURSOR))
+        label_api_key.addMouseListener(CopyrightMouseAdapter("https://wpvulndb.com/api"))
+        label_api_key.setAlignmentX(Component.LEFT_ALIGNMENT)
+        panel_api.add(label_api_key)
+
+        panel_upper.add(panel_api)
+
         panel_buttons = JPanel()
         panel_buttons.setLayout(BoxLayout(panel_buttons, BoxLayout.X_AXIS))
         panel_buttons.setAlignmentX(Component.LEFT_ALIGNMENT)
@@ -325,6 +367,9 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         button_reset_to_default = JButton("Reset settings to default",
                                           actionPerformed=self.button_reset_to_default_on_click)
         panel_buttons.add(button_reset_to_default)
+
+        clear_cache = JButton("Clear cache",actionPerformed=self.button_clear_cache)
+        panel_buttons.add(clear_cache)
 
         panel_upper.add(panel_buttons)
 
@@ -418,8 +463,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
     def button_force_update_on_click(self, msg):
         self.print_debug("[+] button_force_update_on_click")
 
-        self.update_config('sha_plugins', '')
-        self.update_config('sha_themes', '')
+        self.update_config('sha_admin_ajax', '')
         self.update_config('update_burp_wp', '0')
 
         self.button_update_on_click(None)
@@ -459,6 +503,11 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
     def button_update_on_click(self, msg):
         threading.Thread(target=self.update_database_wrapper).start()
         threading.Thread(target=self.update_burp_wp).start()
+
+    def button_clear_cache(self, msg):
+        temp = self.database.get('admin_ajax', {})
+        self.database = {'plugins': collections.OrderedDict(), 'themes': collections.OrderedDict(), 'admin_ajax': temp}
+        self.update_database_file()
 
     def button_choose_file_on_click(self, msg):
         file_chooser = JFileChooser()
@@ -600,6 +649,19 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
         finally:
             self.lock_update_burp_wp.release()
 
+    def update_database_file(self):
+        self.lock_update_database.acquire()
+
+        try:           
+            with open(self.config.get('database_path'), "wb") as fp:
+                json.dump(self.database, fp)
+            self.update_config('last_update', int(time.time()))
+        except:
+            self.print_debug("[+] update_database_file update error")
+        finally:
+            self.lock_update_database.release()
+            
+
     def update_database_wrapper(self):
         if not self.lock_update_database.acquire(False):
             self.print_debug("[*] update_database update already running")
@@ -642,9 +704,7 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
             return None
 
     def _update_database(self):
-        dict_files = {'plugins': 'https://data.wpscan.org/plugins.json',
-                      'themes': 'https://data.wpscan.org/themes.json',
-                      'admin_ajax': 'https://raw.githubusercontent.com/kacperszurek/burp_wp/master/data/admin_ajax.json'}
+        dict_files = {'admin_ajax': 'https://raw.githubusercontent.com/kacperszurek/burp_wp/master/data/admin_ajax.json'}
 
         progress_divider = len(dict_files) * 2
         progress_adder = 0
@@ -688,43 +748,6 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
 
                 if _type == 'admin_ajax':
                     temp_database = loaded_json
-                else:
-                    i = 0
-                    progress_adder += int(100 / progress_divider)
-                    json_length = len(loaded_json)
-                    for name in loaded_json:
-                        bugs = []
-                        i += 1
-                        if i % 1000 == 0:
-                            percent = int((i * 100. / json_length) / 4) + progress_adder
-                            self.progressbar_update.setValue(percent)
-                            self.progressbar_update.setStringPainted(True)
-                        # No bugs
-                        if len(loaded_json[name]['vulnerabilities']) == 0:
-                            continue
-
-                        for vulnerability in loaded_json[name]['vulnerabilities']:
-                            bug = {'id': vulnerability['id'], 'title': vulnerability['title'].encode('utf-8'),
-                                   'vuln_type': vulnerability['vuln_type'].encode('utf-8'), 'reference': ''}
-
-                            if 'references' in vulnerability:
-                                if 'url' in vulnerability['references']:
-                                    references = []
-                                    for reference_url in vulnerability['references']['url']:
-                                        references.append(reference_url.encode('utf-8'))
-                                    if len(references) != 0:
-                                        bug['reference'] = references
-                            if 'cve' in vulnerability:
-                                bug['cve'] = vulnerability['cve'].encode('utf-8')
-                            if 'exploitdb' in vulnerability:
-                                bug['exploitdb'] = vulnerability['exploitdb'][0].encode('utf-8')
-                            # Sometimes there is no fixed in or its None
-                            if 'fixed_in' in vulnerability and vulnerability['fixed_in']:
-                                bug['fixed_in'] = vulnerability['fixed_in'].encode('utf-8')
-                            else:
-                                bug['fixed_in'] = '0'
-                            bugs.append(bug)
-                        temp_database[name] = bugs
 
                 progress_adder += int(100 / progress_divider)
                 self.database[_type] = temp_database
@@ -1047,6 +1070,75 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
 
         return False
 
+    def api_request(self, _type, name):
+        if self.config.get('api_key', '') == 'PLEASE_REPLACE':
+            return
+        self.print_debug("[+] api_request: {}:{}".format(_type, name))
+
+        try:
+            original_url = "https://wpvulndb.com/api/v3/{}/{}".format(_type, name)
+            java_url = URL(original_url)
+            request = self.helpers.buildHttpRequest(java_url)
+            requestInfo = self.helpers.analyzeRequest(request)
+            headers = requestInfo.getHeaders()
+            headers.add("Authorization: Token token={}".format(self.config.get('api_key', '')))
+            message = self.helpers.buildHttpMessage(headers, request)
+            response = self.callbacks.makeHttpRequest(java_url.getHost(), 443, True, message)           
+            response_info = self.helpers.analyzeResponse(response)
+            response_value = self.helpers.bytesToString(response)[response_info.getBodyOffset():].encode("latin1")
+
+            if response_info.getStatusCode() == 403:
+                if self.api_errors == 0:
+                    JOptionPane.showMessageDialog(self.panel_main, "You probably reach API count: {}".format(response_value))
+                    self.api_errors += 1
+                    return                
+
+            try:
+                loaded_json = json.loads(response_value)
+
+                if "error" in loaded_json:
+                    if loaded_json['error'] != "Not found":
+                        if self.api_errors == 0:
+                            JOptionPane.showMessageDialog(self.panel_main, "Request to Vulnerability Database API failed: {}".format(loaded_json['error']))
+                        self.api_errors += 1
+                        return
+
+                bugs = []
+                if name in loaded_json and "vulnerabilities" in loaded_json[name]:                   
+                    for vulnerability in loaded_json[name]['vulnerabilities']:
+                        bug = {'id': vulnerability['id'], 'title': vulnerability['title'].encode('utf-8'),
+                               'vuln_type': vulnerability['vuln_type'].encode('utf-8'), 'reference': ''}
+
+                        if 'references' in vulnerability:
+                            if 'url' in vulnerability['references']:
+                                references = []
+                                for reference_url in vulnerability['references']['url']:
+                                    references.append(reference_url.encode('utf-8'))
+                                if len(references) != 0:
+                                    bug['reference'] = references
+                        if 'cve' in vulnerability:
+                            bug['cve'] = vulnerability['cve'].encode('utf-8')
+                        if 'exploitdb' in vulnerability:
+                            bug['exploitdb'] = vulnerability['exploitdb'][0].encode('utf-8')
+                        # Sometimes there is no fixed in or its None
+                        if 'fixed_in' in vulnerability and vulnerability['fixed_in']:
+                            bug['fixed_in'] = vulnerability['fixed_in'].encode('utf-8')
+                        else:
+                            bug['fixed_in'] = '0'
+                        bugs.append(bug)
+
+                self.database[_type][name] = bugs
+                self.update_database_file()
+                self.update_config('last_update', int(time.time()))
+
+            except:
+                self.print_debug(
+                    "[-] api_request cannot decode json: {}".format(traceback.format_exc()))               
+        
+        except:
+            self.print_debug("[-] api_request failed: {}".format(traceback.format_exc()))
+
+
     def parse_bug_details(self, bug, plugin_name, _type):
         content = "ID: <a href='https://wpvulndb.com/vulnerabilities/{}'>{}</a><br />Title: {}<br />Type: {}<br />".format(
             bug['id'], bug['id'], bug['title'], bug['vuln_type'])
@@ -1075,6 +1167,9 @@ class BurpExtender(IBurpExtender, IHttpListener, ITab, IContextMenuFactory, IMes
             requests = [base_request_response]
 
         url = self.helpers.analyzeRequest(base_request_response).getUrl()
+
+        if not plugin_name in self.database[_type]:
+            self.api_request(_type, plugin_name)
 
         if plugin_name in self.database[_type]:
             self.print_debug(

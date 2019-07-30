@@ -1,2 +1,2 @@
-{"version_number": "0.2", "url": "https://raw.githubusercontent.com/kacperszurek/burp_wp/master/burp_wp.py", "sha256": "d03505ed13338a0e4d1ec3639194fc04208f0f5ac51e8bbcce621e823a122856", "changelog": "Add discovery plugins using wp-ajax.php?action"}
-MC0CFHSUry7hnJuGuiMTy/NLTCF6Y+XZAhUAj+oMWjeD2Vqqjz4ekSR18ai+SuA=
+{"version_number": "0.3", "url": "https://raw.githubusercontent.com/kacperszurek/burp_wp/master/burp_wp.py", "sha256": "39ee6223dca54f777b059043177f260aae0d5da38489910c934c9d916f7754a1", "changelog": "Support Vulnerability Database API v3"}
+MCwCFHkuZ7eHsl7+2VpJBOImQ4MiDz2FAhR+YufN4jb/ifhC3Q2GfRYP7eDwLw==
